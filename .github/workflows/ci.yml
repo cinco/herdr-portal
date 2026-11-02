@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:  # 事故 / 排队被取消时可以手动重跑，不必再推提交
 
+# 只读：CI 只编译和跑测试，不需要写仓库或任何其他权限
+permissions:
+  contents: read
+
 jobs:
   test:
     name: ${{ matrix.os }} · Python ${{ matrix.python }}
@@ -15,13 +19,18 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         python: ["3.9", "3.13"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      # action 按完整 commit SHA 固定（标签可以被改指向），注释里是对应的标签
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: ${{ matrix.python }}
       - name: Syntax check
         run: |
-          python3 -m py_compile board/*.py
+          python3 -m py_compile board/*.py board/i18n/__init__.py scripts/i18n-check.py
           bash -n scripts/*.sh
       - name: Unit tests
         run: python3 -m unittest discover -s tests
+      - name: i18n catalogs
+        run: python3 scripts/i18n-check.py --strict
