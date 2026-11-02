@@ -22,6 +22,7 @@ if str(ROOT / "board") not in sys.path:
     sys.path.insert(0, str(ROOT / "board"))
 
 import collect  # noqa: E402
+import i18n  # noqa: E402
 
 
 def iso(seconds_ago: float = 0.0) -> str:
@@ -79,9 +80,11 @@ class CollectTestCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         self._env = {}
-        for key, value in {"HERDR_PORTAL_STATE_DIR": str(self.root / "state")}.items():
+        # 断言写的是中文原文：固定 zh（源语言，不查目录），不受跑测试的机器 locale 影响
+        for key, value in {"HERDR_PORTAL_STATE_DIR": str(self.root / "state"), "HERDR_PORTAL_LANG": "zh"}.items():
             self._env[key] = os.environ.get(key)
             os.environ[key] = value
+        i18n.reset()
         # 进程级 memo 在测试之间必须清干净，否则用例互相污染
         collect._session_cache.clear()
         collect._SUBAGENT_OPEN.clear()
@@ -98,6 +101,7 @@ class CollectTestCase(unittest.TestCase):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+        i18n.reset()
         self._tmp.cleanup()
 
 

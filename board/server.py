@@ -19,7 +19,9 @@ WEB = ROOT / "web"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import i18n  # noqa: E402 - 同目录包（board/i18n）
 import logutil  # noqa: E402 - 同目录模块（board/ 已在 sys.path 上）
+from i18n import t  # noqa: E402
 
 from collect import (  # noqa: E402
     DEFAULT_CLEANUP_IDLE,
@@ -82,25 +84,26 @@ ALLOWED_ORIGINS = frozenset(f"http://{host}" for host in ALLOWED_HOSTS)
 
 
 def load_token() -> str:
-    """/api/* 的访问 token：已有就复用（重启后开着的标签页不失效），没有才生成。
+    """/api/* 的访问 token：每次服务启动都换一个新的（旧 token 随旧进程作废）。
 
-    0600 只给本用户读；网页端从 URL 读一次后存 sessionStorage，地址栏随即抹掉。
+    0600 只给本用户读；先写临时文件再原子替换，读的人不会读到半个 token。
+    open-web.sh 把它放进 URL 的 #token= 片段交给网页，网页读一次后存 sessionStorage 并抹掉地址栏。
     """
-    try:
-        current = TOKEN_FILE.read_text(encoding="utf-8").strip()
-    except OSError:
-        current = ""
-    if TOKEN_RE.match(current):
-        return current
     token = secrets.token_urlsafe(32)
+    tmp = TOKEN_FILE.with_name(TOKEN_FILE.name + ".tmp")
     try:
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-        handle = os.open(TOKEN_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
+        handle = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
             stream.write(token + "\n")
-        os.chmod(TOKEN_FILE, 0o600)  # 覆盖旧文件时权限不会自动收紧
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, TOKEN_FILE)
     except OSError as exc:
-        sys.stderr.write(f"herdr portal: 写 token 文件失败 {TOKEN_FILE}: {exc}\n")
+        sys.stderr.write(t("herdr portal: 写 token 文件失败 {token_file}: {exc}\n", token_file=TOKEN_FILE, exc=exc))
     return token
 
 
@@ -138,7 +141,7 @@ class Handler(BaseHTTPRequestHandler):
         host = (self.headers.get("Host") or "").strip().lower()
         if host in ALLOWED_HOSTS:
             return True
-        self._forbidden("Host 不是本机回环地址")
+        self._forbidden(t("Host 不是本机回环地址"))
         return False
 
     def _guard_api(self, mutating: bool) -> bool:
@@ -151,10 +154,10 @@ class Handler(BaseHTTPRequestHandler):
             return False
         token = self.headers.get("X-Herdr-Portal-Token") or ""
         if not TOKEN or not TOKEN_RE.match(token) or not secrets.compare_digest(token, TOKEN):
-            self._forbidden("缺少或错误的 X-Herdr-Portal-Token")
+            self._forbidden(t("缺少或错误的 X-Herdr-Portal-Token"))
             return False
         if mutating and not self._origin_ok():
-            self._forbidden("跨源请求已拒绝")
+            self._forbidden(t("跨源请求已拒绝"))
             return False
         return True
 
@@ -188,6 +191,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/snapshot":
             self._json(200, collect_or_error())
+            return
+        if parsed.path == "/api/i18n":
+            # 网页端的语言与目录：和 TUI 同一套解析（HERDR_PORTAL_LANG > LC_ALL > LC_MESSAGES > LANG）
+            self._json(200, {"ok": True, "lang": i18n.lang(), "html_lang": i18n.html_lang(), "catalog": i18n.catalog()})
             return
         if parsed.path == "/api/cleanup":
             try:

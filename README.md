@@ -60,8 +60,13 @@ No window switching, no mouse hunt, no "which tab was that agent in again". `Ctr
 
 ## Quick start
 
+This is the **`cinco/herdr-portal` fork** (a security-reviewed fork of the original herdr-portal, see `LICENSE`). Updates come from this fork only. The recommended install is a clone linked into herdr, so updates run as `git pull --ff-only` against the fork:
+
 ```bash
-herdr plugin install loofare/herdr-portal
+git clone https://github.com/cinco/herdr-portal.git ~/src/herdr-portal
+herdr plugin link ~/src/herdr-portal
+# or, without a clone:
+herdr plugin install cinco/herdr-portal
 ```
 
 Then bind the keys in `~/.config/herdr/config.toml`:
@@ -123,21 +128,21 @@ A permanent `⌫ 释放闲置` button sits in the header; `X` does the same from
 
 The panel lists what is safe to reclaim and says why:
 
-- **Never reclaimed** — agents that are running or waiting on you, the focused pane, the pane hosting the board itself, and any window with a real foreground process (ssh, vim, log tails…). They show up on the *protected* line with their reason.
+- **Never reclaimed** — agents that are running or waiting on you, the focused pane, the pane hosting the board itself, any window with a real foreground process (ssh, vim, log tails…), and any shell that still has child processes (background jobs such as `npm run dev &` — closing the pane would SIGHUP them). They show up on the *protected* line with their reason.
 - **Candidates** — window panes whose foreground is nothing but an idle shell (`静止 Shell`), plus idle/finished agents (marked `⚠`, higher risk, **never preselected**).
 - **Quiet time** — the board samples each pane's terminal revision every second and records when it last changed, so "静默 2h" is observed, not guessed (state lives in `~/.cache/herdr-portal/activity.json`).
 - **Preselect threshold** — `T`, or the chip in the panel's top-right, cycles `不限 / 5m / 30m / 2h`. It only changes what is ticked by default; the list itself is always complete.
 - **Two-step confirm** — the first `Enter` only arms the action (the button becomes *确认释放 N 项*), the second one closes the panes. Applying re-scans first, so anything that woke up in the meantime is skipped.
 - **Cascade** — closing a tab's last pane closes the tab, and a workspace's last tab closes the workspace; the panel flags that up front with `连带释放 workspace「…」`.
 
-The web board drives the same engine: the `释放闲置` button in the rail, or `x`.
+The web board drives the same engine: the `释放闲置` button in the rail, or `x`. There too the first click on *释放选中* only arms the button (it turns red and asks for confirmation); a second click within 4 s closes the panes, anything else disarms it.
 
 **Disk cleanup on the side** — the panel's footer carries `磁盘预览 d` / `磁盘清理 D`, handing the disk half to [Mole](https://mole.fit)'s `mo clean`:
 
 - `d` → `mo clean --dry-run` (report only, touches nothing)
-- `D` → `mo clean` (the real thing; mo does its own confirmation)
+- `D` → `mo clean` (the real thing). **Two steps**: the first `D` (or click) only arms it and shows a warning, the second `D` runs it; any other key disarms
 - Both **open a fresh herdr tab**, start the command there, jump you to it and close the board. `mo` is interactive (sudo prompts, full-screen UI), so it belongs in a real terminal — the board launches it and gets out of the way.
-- Without `mo` installed the panel says `未找到 mo（Mole）· https://mole.fit` in red and does nothing else. `HERDR_PORTAL_MO_BIN` points at a different binary.
+- Without `mo` on the `PATH` the disk buttons are not shown and `d` / `D` only say `未找到 mo（Mole）· https://mole.fit` — nothing is run. `HERDR_PORTAL_MO_BIN` points at a different binary.
 
 Division of labour: **reclaim frees memory and processes (panes/tabs/workspaces), `mo clean` frees disk (caches, logs, leftovers)**.
 
@@ -157,15 +162,15 @@ Renaming a tab carries the pane title along because the card headline prefers th
 
 ### Version check and guided update
 
-The header subtitle always carries the installed version (`全局智能体调度 · AGENT 看板 · v1.3.0`, read from `herdr-plugin.toml`). When upstream is ahead, an amber `⬆ 更新 vX.Y.Z  U` button appears in the header; `U` does the same from the keyboard:
+The header subtitle always carries the installed version (`全局智能体调度 · AGENT 看板 · v1.3.0`, read from `herdr-plugin.toml`). The version check and the update both use **this fork** (`cinco/herdr-portal`), never another repository. When the fork is ahead, an amber `⬆ 更新 vX.Y.Z  U` button appears in the header; `U` does the same from the keyboard:
 
-- **Never blocks** — a background thread reads the upstream `herdr-plugin.toml` version at startup and caches it in `~/.cache/herdr-portal/version.json` (6h TTL). Rendering only reads that cache, so offline or rate-limited simply means no button, never a stalled frame
+- **Never blocks** — a background thread reads the fork's `herdr-plugin.toml` version at startup and caches it in `~/.cache/herdr-portal/version.json` (6h TTL). Rendering only reads that cache, so offline or rate-limited simply means no button, never a stalled frame
 - **Two presses before anything runs** — the first `U` only says `发现新版 vX.Y.Z（当前 vA.B.C）· 再按一次 U 执行 …`; the second one launches
-- **Update path follows the install path** — a `.git` inside the plugin directory means `git pull --ff-only` (which refuses to clobber local work and leaves conflicts to you); otherwise `herdr plugin install github:<repo>`
+- **Update path follows the install path** — a `.git` inside the plugin directory (the `herdr plugin link` clone) means `git pull --ff-only` from that clone's `origin` (the fork; it refuses to clobber local work and leaves conflicts to you); otherwise `herdr plugin install github:<repo>`, with `<repo>` the same repository the version check uses
 - **Runs in a real terminal** — the command gets its own herdr tab, then the board jumps you there and closes. Auth prompts, conflicts and interactive output stay yours
 - **Up to date / unknown** — `已是最新 · vX.Y.Z` and `查不到最新版本 · reason`, both side-effect free
 
-Environment overrides: `HERDR_PORTAL_REPO` (default `loofare/herdr-portal`), `HERDR_PORTAL_BRANCH` (default `main`), `HERDR_PORTAL_VERSION_TTL` (seconds, default 21600).
+Environment overrides: `HERDR_PORTAL_REPO` (default `cinco/herdr-portal`; must look like `owner/name`, anything else falls back to the default), `HERDR_PORTAL_BRANCH` (default `main`), `HERDR_PORTAL_VERSION_TTL` (seconds, default 21600).
 
 ## Key reference
 
@@ -206,7 +211,7 @@ Inside the rename panel: `Tab` switch target · `←→` move the cursor · `Ctr
 
 The web board is served by `board/server.py` on `127.0.0.1:8787`, and every `/api/*` call is gated:
 
-- **Token** — generated on first start (`secrets.token_urlsafe(32)`) and written to `$HERDR_PORTAL_RUNTIME/token` (default `~/.local/state/herdr-portal/token`, mode `0600`). `open-web.sh` passes it to the browser as `?token=…`; the page moves it into `sessionStorage` and wipes it from the address bar right away. Every API request then has to carry `X-Herdr-Portal-Token`. Delete the file to rotate the token, then reopen the board from Herdr.
+- **Token** — a fresh one on **every server start** (`secrets.token_urlsafe(32)`), written to `$HERDR_PORTAL_RUNTIME/token` (default `~/.local/state/herdr-portal/token`, mode `0600`). `open-web.sh` passes it to the browser in the URL fragment (`#token=…`, never sent to the server or logged); the page moves it into `sessionStorage` and wipes it from the address bar right away. Every API request then has to carry `X-Herdr-Portal-Token`. To rotate it, restart the service (`python3 board/daemon.py restart`) and reopen the board from Herdr; on macOS/Chrome the open tab is reused and picks up the new token.
 - **Host** — must be `127.0.0.1:<port>` or `localhost:<port>` (plus whatever `HERDR_PORTAL_HOST` is set to). A rebinding name like `evil.example:8787` gets `403`.
 - **Same origin** — a `POST` carrying an `Origin` / `Referer` from anywhere else gets `403`. Without this, any page you happen to visit could POST a prompt into an agent or close panes/tabs: those are "simple requests" that no preflight stops.
 
@@ -227,10 +232,33 @@ This is a local tool. `HERDR_PORTAL_HOST` exists for edge cases, but do not poin
 - **Big-screen supervision** — park the web board on a second display or tablet; progress scrolls live and the workspace view groups by project
 - **Window overview** — SSH sessions and log tails stay in the window view instead of mixing with agent state
 
+## Language
+
+The TUI, the web board and the helper scripts speak **English**, **Português (Brasil)** or **中文** (the original source text).
+
+The language is picked from, first non-empty wins:
+
+1. `HERDR_PORTAL_LANG` — `en`, `pt_BR` (also `pt-BR` / `pt`), `zh`
+2. the file `lang` in the plugin config dir (`herdr plugin config-dir herdr-portal`, usually `~/.config/herdr/plugins/config/herdr-portal/lang`), one line with the language
+3. `LC_ALL`
+4. `LC_MESSAGES`
+5. `LANG`
+
+`pt*` → Português, `zh*` → 中文, `en*` and anything else (including `C` / `POSIX`) → English. The web board uses the language of the web service process, so after changing it restart the service: `python3 board/daemon.py restart`.
+
+```bash
+# persistent, no need to touch the environment herdr was started with
+echo pt_BR > "$(herdr plugin config-dir herdr-portal)/lang"
+python3 board/daemon.py restart   # only if the web service is already running
+```
+
+Translations live in `board/i18n/<lang>.json`, keyed by the original Chinese strings; a missing key shows the Chinese text instead of failing. `python3 scripts/i18n-check.py` lists keys used in the code without a translation and catalog keys the code no longer uses.
+
 ## Environment variables
 
 | Variable | Effect |
 | --- | --- |
+| `HERDR_PORTAL_LANG` | UI language: `en`, `pt_BR`, `zh` (default: from `LC_ALL` / `LC_MESSAGES` / `LANG`, else English) — see [Language](#language) |
 | `HERDR_PORTAL_PORT` | Web port (default 8787) |
 | `HERDR_PORTAL_HOST` | Bind address and allowed `Host` (default `127.0.0.1`; keep it loopback) |
 | `HERDR_PORTAL_RUNTIME` | Runtime dir for token / pid / log (default `~/.local/state/herdr-portal`) |

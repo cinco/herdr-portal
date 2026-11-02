@@ -61,7 +61,7 @@ Enter            跳到该 pane —— 看板在跳转的同时自己关掉
 ## 快速开始
 
 ```bash
-herdr plugin install loofare/herdr-portal
+herdr plugin install cinco/herdr-portal
 ```
 
 然后绑定快捷键（`~/.config/herdr/config.toml`）：
@@ -165,7 +165,7 @@ TUI 以键盘为主，但不是只能用键盘：
 - **在真终端里跑**：更新命令新开一个 herdr 标签页执行，然后把你送过去、关掉看板——认证、冲突、交互提示都归你处理，看板不代管
 - **已是最新 / 查不到**：分别提示 `已是最新 · vX.Y.Z` 和 `查不到最新版本 · 原因`，都不会有任何副作用
 
-可调环境变量：`HERDR_PORTAL_REPO`（默认 `loofare/herdr-portal`）、`HERDR_PORTAL_BRANCH`（默认 `main`）、`HERDR_PORTAL_VERSION_TTL`（秒，默认 21600）。
+可调环境变量：`HERDR_PORTAL_REPO`（默认 `cinco/herdr-portal`，即本 fork；更新只来自这个仓库）、`HERDR_PORTAL_BRANCH`（默认 `main`）、`HERDR_PORTAL_VERSION_TTL`（秒，默认 21600）。
 
 ## 快捷键速查
 

@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import logutil  # noqa: E402 - 运行时目录只在这里定义一次
+from i18n import t  # noqa: E402
 
 SERVER = ROOT / "server.py"
 RUNTIME = logutil.runtime_dir()
@@ -148,9 +149,9 @@ def stop() -> int:
         return 0
     assert pid is not None
     if not is_portal_server(pid):
-        print(f"拒绝停止：pid {pid} 不是本插件的 server.py（pid 文件已过期或被 pid 复用占坑）", file=sys.stderr)
-        print(f"  该 pid 的实际命令行: {process_command(pid) or '(读不到)'}", file=sys.stderr)
-        print(f"  未向它发任何信号；确认后手动删除 {PID_FILE} 再重试。", file=sys.stderr)
+        print(t("拒绝停止：pid {pid} 不是本插件的 server.py（pid 文件已过期或被 pid 复用占坑）", pid=pid), file=sys.stderr)
+        print(t("  该 pid 的实际命令行: {pid}", pid=process_command(pid) or t("(读不到)")), file=sys.stderr)
+        print(t("  未向它发任何信号；确认后手动删除 {pid_file} 再重试。", pid_file=PID_FILE), file=sys.stderr)
         return 1
     os.kill(pid, signal.SIGTERM)
     for _ in range(30):

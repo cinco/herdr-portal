@@ -10,6 +10,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -18,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 
+from i18n import N_, t  # noqa: E402 - 同目录模块（board/ 已在 sys.path 上）
 from logutil import note  # noqa: E402 - 同目录模块（board/ 已在 sys.path 上）
 
 HERDR_BIN = os.environ.get("HERDR_BIN_PATH", "herdr")
@@ -25,11 +27,11 @@ HERDR_BIN = os.environ.get("HERDR_BIN_PATH", "herdr")
 STATUS_ORDER = ("blocked", "working", "idle", "done", "unknown")
 
 STATUS_META = {
-    "blocked": {"label": "待确认", "short": "BLOCKED", "tone": "blocked"},
-    "working": {"label": "执行中", "short": "WORKING", "tone": "working"},
-    "idle": {"label": "空闲", "short": "IDLE", "tone": "idle"},
-    "done": {"label": "已完成", "short": "DONE", "tone": "done"},
-    "unknown": {"label": "未知", "short": "UNKNOWN", "tone": "unknown"},
+    "blocked": {"label": N_("待确认"), "short": "BLOCKED", "tone": "blocked"},
+    "working": {"label": N_("执行中"), "short": "WORKING", "tone": "working"},
+    "idle": {"label": N_("空闲"), "short": "IDLE", "tone": "idle"},
+    "done": {"label": N_("已完成"), "short": "DONE", "tone": "done"},
+    "unknown": {"label": N_("未知"), "short": "UNKNOWN", "tone": "unknown"},
 }
 
 AGENT_META = {
@@ -84,7 +86,7 @@ SHELL_NAMES = frozenset(
 PORTAL_MARKERS = ("board/tui.py", "board/server.py", "board/daemon.py")
 # 阈值档位：0 = 不限，其余为「静默秒数」。TUI / 网页共用同一组档位。
 CLEANUP_THRESHOLDS = (0, 300, 1800, 7200)
-CLEANUP_THRESHOLD_LABELS = {0: "不限", 300: "5m", 1800: "30m", 7200: "2h"}
+CLEANUP_THRESHOLD_LABELS = {0: N_("不限"), 300: "5m", 1800: "30m", 7200: "2h"}
 DEFAULT_CLEANUP_IDLE = 1800
 
 _activity: dict[str, dict[str, Any]] = {}
@@ -137,7 +139,7 @@ def clean_title(value: str | None) -> str:
         return ""
     text = SPINNER_RE.sub("", value)
     text = PREFIX_RE.sub("", text)
-    text = re.sub(r"\s+", " ", text).strip(" -·|:：")
+    text = re.sub(r"\s+", " ", text).strip(" -·|:：")  # i18n: internal
     return text
 
 
@@ -177,7 +179,7 @@ def human_age(ts: float | None, now: float | None = None) -> str:
     now = now or time.time()
     delta = max(0, int(now - ts))
     if delta < 10:
-        return "刚刚"
+        return t("刚刚")
     if delta < 60:
         return f"{delta}s"
     if delta < 3600:
@@ -229,36 +231,36 @@ def _headline(text: str | None, limit: int = 92) -> str:
     line = line.replace("**", "").replace("__", "").replace("`", "")
     line = re.sub(r"\s+", " ", line).strip()
     if len(line) > limit:
-        sentence = re.split(r"(?<=[。！？.!?])\s*", line, maxsplit=1)[0]
+        sentence = re.split(r"(?<=[。！？.!?])\s*", line, maxsplit=1)[0]  # i18n: internal
         line = sentence if 8 <= len(sentence) <= limit else line[: limit - 1].rstrip() + "…"
     return line
 
 
 TOOL_PHASES = {
-    "bash": "执行命令",
-    "eval": "运行代码",
-    "read": "读取文件",
-    "write": "写入文件",
-    "edit": "修改代码",
-    "grep": "检索代码",
-    "find": "查找文件",
-    "ls": "浏览目录",
-    "web_search": "联网检索",
-    "fetch_content": "读取网页",
-    "source_check": "核验信息",
-    "subagent": "调度 Agent",
-    "hub": "调度任务",
-    "ask": "等待确认",
+    "bash": N_("执行命令"),
+    "eval": N_("运行代码"),
+    "read": N_("读取文件"),
+    "write": N_("写入文件"),
+    "edit": N_("修改代码"),
+    "grep": N_("检索代码"),
+    "find": N_("查找文件"),
+    "ls": N_("浏览目录"),
+    "web_search": N_("联网检索"),
+    "fetch_content": N_("读取网页"),
+    "source_check": N_("核验信息"),
+    "subagent": N_("调度 Agent"),
+    "hub": N_("调度任务"),
+    "ask": N_("等待确认"),
 }
 
 
 def _humanize_activity_title(title: str) -> str:
     patterns = (
-        (r"^Waiting for (?:the )?(.+?) to finish$", r"等待 \1 完成"),
-        (r"^Continuing to wait for (?:the )?(.+)$", r"继续等待 \1"),
-        (r"^Wait for (?:the )?(.+)$", r"等待 \1"),
-        (r"^Read (.+)$", r"读取 \1"),
-        (r"^Test (.+)$", r"测试 \1"),
+        (r"^Waiting for (?:the )?(.+?) to finish$", t(r"等待 \1 完成")),
+        (r"^Continuing to wait for (?:the )?(.+)$", t(r"继续等待 \1")),
+        (r"^Wait for (?:the )?(.+)$", t(r"等待 \1")),
+        (r"^Read (.+)$", t(r"读取 \1")),
+        (r"^Test (.+)$", t(r"测试 \1")),
     )
     for pattern, replacement in patterns:
         if re.match(pattern, title, flags=re.IGNORECASE):
@@ -280,18 +282,18 @@ def _tool_activity(tool: dict[str, Any], fallback: str = "") -> dict[str, Any]:
         or args.get("reason")
     )
     op = str(args.get("op") or "").lower()
-    phase = TOOL_PHASES.get(name, "调用工具")
+    phase = t(TOOL_PHASES[name]) if name in TOOL_PHASES else t("调用工具")
     intent_text = str(intent or "")
     if name == "hub" and (op == "wait" or re.match(r"^(?:Waiting|Continuing to wait|Wait)\b", intent_text, re.IGNORECASE)):
-        phase = "等待子任务"
+        phase = t("等待子任务")
     elif name == "hub":
-        phase = "调度子任务"
+        phase = t("调度子任务")
     elif name == "subagent":
-        phase = "调度 Agent"
+        phase = t("调度 Agent")
 
     title = _headline(str(intent) if intent else "")
     if not title and name in {"read", "write", "edit"} and args.get("path"):
-        action = {"read": "读取", "write": "写入", "edit": "更新"}[name]
+        action = t({"read": N_("读取"), "write": N_("写入"), "edit": N_("更新")}[name])
         title = f"{action} {Path(str(args['path'])).name}"
     if not title and fallback:
         title = _headline(fallback)
@@ -299,7 +301,7 @@ def _tool_activity(tool: dict[str, Any], fallback: str = "") -> dict[str, Any]:
         command = re.sub(r"\s+", " ", str(args["command"])).strip()
         title = _headline(command, 76)
     if not title:
-        title = f"正在使用 {name}"
+        title = t("正在使用 {name}", name=name)
     title = _humanize_activity_title(title)
     return {"tool": name, "phase": phase, "title": title}
 
@@ -514,10 +516,10 @@ def classify_window(pane: dict[str, Any]) -> tuple[str, str]:
     if "ssh " in blob or blob.startswith("ssh"):
         return "ssh", "SSH"
     if any(token in blob for token in ("vim", "nvim", "helix", "emacs")):
-        return "editor", "编辑器"
+        return "editor", t("编辑器")
     if any(token in blob for token in ("git", "lazygit", "tig")):
         return "git", "Git"
-    return "shell", "窗口"
+    return "shell", t("窗口")
 
 
 def build_activity(
@@ -529,7 +531,7 @@ def build_activity(
 ) -> dict[str, Any]:
     if not is_agent:
         return {
-            "phase": "窗口活动",
+            "phase": t("窗口活动"),
             "title": terminal_title or fallback_title,
             "tool": "terminal",
             "active": False,
@@ -540,23 +542,23 @@ def build_activity(
     headline = extra.get("headline") or ""
     session_title = extra.get("session_title") or ""
     if status == "blocked":
-        phase = "等待确认"
-        title = headline or tool_title or "等待你的输入或授权"
+        phase = t("等待确认")
+        title = headline or tool_title or t("等待你的输入或授权")
         active = True
     elif status == "working" and extra.get("tool_pending"):
-        phase = extra.get("tool_phase") or "正在执行"
+        phase = extra.get("tool_phase") or t("正在执行")
         title = tool_title or headline or session_title or fallback_title
         active = True
     elif status == "working" and extra.get("last_event_kind") == "result":
-        phase = "整理执行结果"
+        phase = t("整理执行结果")
         title = tool_title or headline or session_title or fallback_title
         active = True
     elif status == "working":
-        phase = "生成回复"
+        phase = t("生成回复")
         title = headline or tool_title or session_title or fallback_title
         active = True
     else:
-        phase = "最近完成" if status == "done" else "最近活动"
+        phase = t("最近完成") if status == "done" else t("最近活动")
         title = headline or tool_title or session_title or fallback_title
         active = False
 
@@ -588,13 +590,13 @@ def normalize_item(
         agent_label = window_label
         family = window_kind
         column = "window"
-        status_label = "窗口"
+        status_label = t("窗口")
     else:
         meta = AGENT_META.get(agent, {"label": str(agent).upper(), "family": "other"})
         agent_label = meta["label"]
         family = meta["family"]
         column = status if status in STATUS_META else "unknown"
-        status_label = STATUS_META.get(status, STATUS_META["unknown"])["label"]
+        status_label = t(STATUS_META.get(status, STATUS_META["unknown"])["label"])
 
     pane_title = str(pane.get("label") or "").strip()
     session_title = str(extra.get("session_title") or "").strip()
@@ -622,10 +624,10 @@ def normalize_item(
     if is_agent and session_path and status in {"idle", "done"}:
         background_count, background_at = background_running(session_path, now)
         if background_count:
-            status_label = f"后台执行中 · {background_count}"
+            status_label = t("后台执行中 · {background_count}", background_count=background_count)
             activity = {
                 **activity,
-                "phase": "后台子代理执行中",
+                "phase": t("后台子代理执行中"),
                 "active": True,
                 "tone": "working",
             }
@@ -1019,18 +1021,20 @@ def send_text(pane_id: str, text: str) -> dict[str, Any]:
         if char in "\n\t" or ord(char) >= 32
     ).strip()
     if not message:
-        raise ValueError("消息内容为空")
+        raise ValueError(t("消息内容为空"))
     if len(message) > 20_000:
-        raise ValueError("消息过长（上限 20000 字符）")
+        raise ValueError(t("消息过长（上限 20000 字符）"))
 
     snapshot = collect()
     item = next((entry for entry in snapshot["items"] if entry["pane_id"] == pane_id), None)
     if not item:
-        raise RuntimeError(f"pane 不存在: {pane_id}")
+        raise RuntimeError(t("pane 不存在: {pane_id}", pane_id=pane_id))
     if item["kind"] != "agent":
-        raise RuntimeError("该 Pane 不是 Agent，网页端暂只支持向 Agent 发送文字")
+        raise RuntimeError(t("该 Pane 不是 Agent，网页端暂只支持向 Agent 发送文字"))
 
-    if item["status"] in {"blocked", "idle", "done"}:
+    # herdr 0.9.1 的 `agent prompt` 把以 - 开头的文本当成未知选项（加 -- 也一样），
+    # 这类文本改走 send-text + Enter；`pane send-text` 原样接受 -x，且会把 -- 当文本发出去，所以那边不加 --。
+    if item["status"] in {"blocked", "idle", "done"} and not message.startswith("-"):
         run_herdr("agent", "prompt", pane_id, message, timeout=20)
         return {"path": "prompt", "agent": item["agent_label"], "title": item["title"]}
 
@@ -1113,6 +1117,9 @@ def _find_terminal_app() -> tuple[str, int] | None:
 def bring_herdr_to_front() -> bool:
     """把承载 Herdr 的终端窗口带到前台。"""
     if os.environ.get("HERDR_PORTAL_NO_FRONT") == "1":
+        return False
+    if sys.platform != "darwin":
+        # `open -a` / osascript 只在 macOS 上有意义；Linux 上的 open 可能是 openvt
         return False
     found = _find_terminal_app()
     if not found:
@@ -1278,7 +1285,7 @@ def _foreground_summary(info: dict[str, Any] | None) -> tuple[list[str], str, bo
         if name:
             names.append(name)
     shell_only = bool(names) and all(name in SHELL_NAMES for name in names)
-    label = " · ".join(dict.fromkeys(names)) if names else "无前台进程"
+    label = " · ".join(dict.fromkeys(names)) if names else t("无前台进程")
     return names, label, shell_only
 
 
@@ -1294,29 +1301,66 @@ def _is_portal_pane(info: dict[str, Any] | None) -> bool:
     return False
 
 
+def _children_by_parent(table: dict[int, tuple[int, str]]) -> dict[int, list[tuple[int, str]]]:
+    children: dict[int, list[tuple[int, str]]] = {}
+    for pid, (ppid, comm) in table.items():
+        children.setdefault(ppid, []).append((pid, comm))
+    return children
+
+
+def _shell_children(info: dict[str, Any] | None, children: dict[int, list[tuple[int, str]]]) -> list[str]:
+    """前台 shell（及 shell_pid）名下、不在前台进程组里的子进程名：后台 job、nohup 之类。"""
+    own: set[int] = set()
+    for value in [(info or {}).get("shell_pid")] + [p.get("pid") for p in (info or {}).get("foreground_processes") or []]:
+        try:
+            if value is not None:
+                own.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    names: list[str] = []
+    for parent in own:
+        for pid, comm in children.get(parent, []):
+            if pid not in own:
+                names.append(str(comm).rsplit("/", 1)[-1] or str(pid))
+    return names
+
+
 def _reclaim_verdict(
     item: dict[str, Any],
     info: dict[str, Any] | None,
     focused_pane_id: str | None,
+    process_table: dict[int, tuple[int, str]] | None = None,
 ) -> tuple[str, str, str, str]:
-    """(verdict, risk, reason, process_label)；verdict 为 candidate / protected。"""
+    """(verdict, risk, reason, process_label)；verdict 为 candidate / protected。
+
+    `process_table`（pid -> (ppid, comm)）给了就检查静止 shell 有没有子进程；
+    给了却是空表（ps 失败）时按「进程信息不可用」保护，宁可不回收。
+    """
     _, process_label, shell_only = _foreground_summary(info)
     if item.get("focused") or item.get("pane_id") == focused_pane_id:
-        return "protected", "", "当前聚焦", process_label
+        return "protected", "", t("当前聚焦"), process_label
     if info is None:
-        return "protected", "", "进程信息不可用", process_label
+        return "protected", "", t("进程信息不可用"), process_label
     if _is_portal_pane(info):
-        return "protected", "", "看板自身", process_label
+        return "protected", "", t("看板自身"), process_label
     if item.get("kind") == "agent":
         if item.get("status") in {"working", "blocked"}:
-            return "protected", "", "Agent 运行中", process_label
+            return "protected", "", t("Agent 运行中"), process_label
         if item.get("background_running"):
             # 主 agent 空闲但子代理还在跑，关掉 pane 会连着后台一起杀。
-            return "protected", "", "后台子代理运行中", process_label
-        return "candidate", "agent", "空闲 Agent", process_label
+            return "protected", "", t("后台子代理运行中"), process_label
+        return "candidate", "agent", t("空闲 Agent"), process_label
     if not shell_only:
-        return "protected", "", f"运行中 · {process_label}", process_label
-    return "candidate", "shell", "静止 Shell", process_label
+        return "protected", "", t("运行中 · {process_label}", process_label=process_label), process_label
+    if process_table is not None:
+        if not process_table:
+            return "protected", "", t("进程信息不可用"), process_label
+        kids = _shell_children(info, _children_by_parent(process_table))
+        if kids:
+            # 关 pane 会给后台 job 发 SIGHUP：有子进程的 shell 不算闲置
+            shown = " · ".join(dict.fromkeys(kids[:3])) + (" …" if len(kids) > 3 else "")
+            return "protected", "", t("Shell 有后台进程 · {children}", children=shown), process_label
+    return "candidate", "shell", t("静止 Shell"), process_label
 
 
 def cleanup_scan(idle_seconds: int = DEFAULT_CLEANUP_IDLE) -> dict[str, Any]:
@@ -1327,6 +1371,7 @@ def cleanup_scan(idle_seconds: int = DEFAULT_CLEANUP_IDLE) -> dict[str, Any]:
     focused_pane_id = (snapshot.get("focused") or {}).get("pane_id")
     focused_tab_id = (snapshot.get("focused") or {}).get("tab_id")
     infos = _process_info_map([item["pane_id"] for item in items if item.get("pane_id")])
+    process_table = _process_table()  # 一次扫描只跑一次 ps，用来找 shell 的后台子进程
 
     tab_total: dict[str, int] = {}
     workspace_total: dict[str, int] = {}
@@ -1339,7 +1384,7 @@ def cleanup_scan(idle_seconds: int = DEFAULT_CLEANUP_IDLE) -> dict[str, Any]:
     for item in items:
         pane_id = item.get("pane_id")
         info = infos.get(pane_id)
-        verdict, risk, reason, process_label = _reclaim_verdict(item, info, focused_pane_id)
+        verdict, risk, reason, process_label = _reclaim_verdict(item, info, focused_pane_id, process_table)
         quiet_seconds = float(item.get("quiet_seconds") or 0.0)
         entry = {
             "pane_id": pane_id,
@@ -1378,7 +1423,7 @@ def cleanup_scan(idle_seconds: int = DEFAULT_CLEANUP_IDLE) -> dict[str, Any]:
     return {
         "ok": True,
         "idle_seconds": idle_seconds,
-        "idle_label": CLEANUP_THRESHOLD_LABELS.get(idle_seconds, f"{idle_seconds // 60}m"),
+        "idle_label": t(CLEANUP_THRESHOLD_LABELS.get(idle_seconds, f"{idle_seconds // 60}m")),
         "clock": time.strftime("%H:%M:%S"),
         "candidates": candidates,
         "protected": protected,
@@ -1403,7 +1448,7 @@ def cleanup_apply(pane_ids: list[str], idle_seconds: int = DEFAULT_CLEANUP_IDLE)
     if invalid:
         raise ValueError(f"invalid pane id: {invalid[0]}")
     if not requested:
-        raise ValueError("没有选中任何 pane")
+        raise ValueError(t("没有选中任何 pane"))
 
     scan = cleanup_scan(idle_seconds)
     allowed = {entry["pane_id"] for entry in scan["candidates"]}
@@ -1446,7 +1491,7 @@ def cleanup_apply(pane_ids: list[str], idle_seconds: int = DEFAULT_CLEANUP_IDLE)
 # ---------- 重命名 ----------
 
 RENAME_KINDS = ("pane", "tab", "workspace")
-RENAME_LABELS = {"pane": "Pane 标题", "tab": "Tab 名称", "workspace": "Workspace 名称"}
+RENAME_LABELS = {"pane": N_("Pane 标题"), "tab": N_("Tab 名称"), "workspace": N_("Workspace 名称")}
 RENAME_MAX = 80
 
 
@@ -1464,9 +1509,11 @@ def rename_target(kind: str, target_id: str, label: str) -> dict[str, Any]:
     if not target_id or not SAFE_ID_RE.match(target_id):
         raise ValueError(f"invalid {kind} id: {target_id}")
     label = clean_label(label)
+    if label.startswith("-"):
+        raise ValueError(t("名称不能以 - 开头（herdr 会把它当成命令行选项）"))
     if not label:
         if kind != "pane":
-            raise ValueError(f"{RENAME_LABELS[kind]}不能为空")
+            raise ValueError(t("{kind}不能为空", kind=t(RENAME_LABELS[kind])))
         run_herdr("pane", "rename", target_id, "--clear")
         return {"kind": kind, "target_id": target_id, "label": "", "cleared": True}
     run_herdr(kind, "rename", target_id, label)
@@ -1495,13 +1542,13 @@ def spawn_tab(
         args += ["--workspace", workspace_id]
     if cwd:
         args += ["--cwd", cwd]
-    label = clean_label(label)
+    label = clean_label(label).lstrip("-").strip()  # 内部标签：去掉开头的 -，免得被当成选项
     if label:
         args += ["--label", label]
     result = run_herdr(*args, timeout=10.0).get("result") or {}
     pane_id = (result.get("root_pane") or {}).get("pane_id")
     if not pane_id:
-        raise RuntimeError("herdr 没有返回新建的 pane")
+        raise RuntimeError(t("herdr 没有返回新建的 pane"))
     return {"kind": "tab", "pane_id": pane_id, "tab_id": (result.get("tab") or {}).get("tab_id")}
 
 
@@ -1518,7 +1565,7 @@ def spawn_pane(pane_id: str, direction: str = "right", cwd: str | None = None) -
     result = run_herdr(*args, timeout=10.0).get("result") or {}
     new_id = (result.get("pane") or {}).get("pane_id")
     if not new_id:
-        raise RuntimeError("herdr 没有返回新建的 pane")
+        raise RuntimeError(t("herdr 没有返回新建的 pane"))
     return {"kind": "pane", "pane_id": new_id, "direction": direction, "source_pane_id": pane_id}
 
 
@@ -1538,7 +1585,7 @@ def launch_task(command: list[str], label: str, cwd: str | None = None) -> dict[
     起一个标签页把它交出去，不去代管它的输入输出。
     """
     if not command:
-        raise ValueError("命令为空")
+        raise ValueError(t("命令为空"))
     spawned = spawn_tab(cwd=cwd, label=clean_label(label) or "task")
     pane_id = spawned["pane_id"]
     try:
@@ -1556,9 +1603,9 @@ def launch_task(command: list[str], label: str, cwd: str | None = None) -> dict[
 def mo_clean(dry_run: bool = True) -> dict[str, Any]:
     """把全局磁盘清理交给 Mole（mo clean），在新标签页里跑。"""
     if not mo_available():
-        raise RuntimeError(f"未找到 {MO_BIN}（Mole）· https://mole.fit")
+        raise RuntimeError(t("未找到 {mo_bin}（Mole）· https://mole.fit", mo_bin=MO_BIN))
     command = [MO_BIN, "clean"] + (["--dry-run"] if dry_run else [])
-    label = "mo clean · 预览" if dry_run else "mo clean"
+    label = t("mo clean · 预览") if dry_run else "mo clean"
     result = launch_task(command, label, cwd=str(Path.home()))
     result["dry_run"] = dry_run
     return result
@@ -1568,8 +1615,24 @@ def mo_clean(dry_run: bool = True) -> dict[str, Any]:
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = PLUGIN_ROOT / "herdr-plugin.toml"
-VERSION_REPO = os.environ.get("HERDR_PORTAL_REPO", "loofare/herdr-portal")
-VERSION_BRANCH = os.environ.get("HERDR_PORTAL_BRANCH", "main")
+# 更新来源：本 fork。检查版本和 `plugin install` 兜底都用这同一个仓库，别处不写死仓库名
+DEFAULT_VERSION_REPO = "cinco/herdr-portal"
+DEFAULT_VERSION_BRANCH = "main"
+_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_BRANCH_RE = re.compile(r"^[A-Za-z0-9_./-]+$")
+
+
+def version_repo() -> str:
+    """owner/name 形式的更新仓库；HERDR_PORTAL_REPO 格式不对时退回默认（别拼进 URL / 命令）。"""
+    value = (os.environ.get("HERDR_PORTAL_REPO") or "").strip()
+    return value if _REPO_RE.match(value) and ".." not in value else DEFAULT_VERSION_REPO
+
+
+def version_branch() -> str:
+    value = (os.environ.get("HERDR_PORTAL_BRANCH") or "").strip()
+    return value if _BRANCH_RE.match(value) and ".." not in value else DEFAULT_VERSION_BRANCH
+
+
 VERSION_TTL = float(os.environ.get("HERDR_PORTAL_VERSION_TTL") or 6 * 3600)
 VERSION_TIMEOUT = 6.0
 VERSION_RE = re.compile(r'(?m)^\s*version\s*=\s*"([^"]+)"')
@@ -1614,7 +1677,7 @@ def _read_version_cache() -> dict[str, Any]:
 
 def fetch_latest_version() -> dict[str, Any]:
     """读一次上游 manifest 的版本号并落缓存；离线 / 限流都只记成「查不到」。"""
-    url = f"https://raw.githubusercontent.com/{VERSION_REPO}/{VERSION_BRANCH}/herdr-plugin.toml"
+    url = f"https://raw.githubusercontent.com/{version_repo()}/{version_branch()}/herdr-plugin.toml"
     record: dict[str, Any] = {"checked_at": time.time(), "source": url}
     try:
         request = urllib.request.Request(url, headers={"User-Agent": "herdr-portal"})
@@ -1622,7 +1685,7 @@ def fetch_latest_version() -> dict[str, Any]:
             body = response.read(200_000).decode("utf-8", "replace")
         latest = _manifest_version(body)
         if not latest:
-            raise ValueError("上游 manifest 没有 version 字段")
+            raise ValueError(t("上游 manifest 没有 version 字段"))
         record["latest"] = latest
     except Exception as exc:  # noqa: BLE001 - 查版本失败绝不该影响看板
         note("拉取上游版本失败", exc)
@@ -1677,14 +1740,15 @@ def update_plan() -> dict[str, Any]:
         return {
             "mode": "git",
             "command": ["git", "-C", str(PLUGIN_ROOT), "pull", "--ff-only"],
-            "label": "portal 更新 · git pull",
+            "label": t("portal 更新 · git pull"),
             "hint": f"git pull --ff-only · {PLUGIN_ROOT}",
         }
+    repo = version_repo()
     return {
         "mode": "plugin",
-        "command": [HERDR_BIN, "plugin", "install", f"github:{VERSION_REPO}"],
-        "label": "portal 更新 · plugin install",
-        "hint": f"herdr plugin install github:{VERSION_REPO}",
+        "command": [HERDR_BIN, "plugin", "install", f"github:{repo}"],
+        "label": t("portal 更新 · plugin install"),
+        "hint": f"herdr plugin install github:{repo}",
     }
 
 
@@ -1869,12 +1933,12 @@ _PLAN_TTL = 15.0
 # 窗口显示名：5 小时 / 每周 / 每月
 _WINDOW_LABELS = {
     "rolling-5h": "5h",
-    "weekly": "周",
-    "weekly_limit": "周",
-    "monthly": "月",
-    "monthly_limit": "月",
-    "7 days": "7天",
-    "7 day": "7天",
+    "weekly": N_("周"),
+    "weekly_limit": N_("周"),
+    "monthly": N_("月"),
+    "monthly_limit": N_("月"),
+    "7 days": N_("7天"),
+    "7 day": N_("7天"),
     "5 hour": "5h",
 }
 
@@ -1946,6 +2010,9 @@ def _plan_summary() -> dict[str, Any]:
         })
     for provider, bucket in providers.items():
         bucket["windows"].sort(key=lambda w: _window_rank(w["window_label"]))
+        for window in bucket["windows"]:
+            # 排序用中文原值（内部值），排完再换成显示用的译文
+            window["window_label"] = t(window["window_label"])
     result["providers"] = sorted(providers.values(), key=lambda b: b["provider"])
     _plan_memo = result
     _plan_memo_at = now
@@ -1954,7 +2021,8 @@ def _plan_summary() -> dict[str, Any]:
 
 def _window_rank(label: str) -> int:
     """窗口排序权重：5h(0) < 周(1) < 月(2) < 其它(3)。"""
-    order = {"5h": 0, "周": 1, "7天": 1, "月": 2}
+    # 内部值：比较的是 _WINDOW_LABELS 里的中文原值，译文在 _plan_summary 排序之后才换上
+    order = {"5h": 0, "周": 1, "7天": 1, "月": 2}  # i18n: internal
     return order.get(label, 3)
 
 

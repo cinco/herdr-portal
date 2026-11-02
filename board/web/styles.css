@@ -1245,3 +1245,10 @@ body[data-theme="command"] kbd { background: #080d14; border-color: var(--border
   .rail-stats { display: none; }
   .themes button { padding: 7px 9px; }
 }
+
+/* 「释放选中」上膛：第二次点击才真正关闭 pane */
+.cleanup-apply.armed {
+  background: var(--rose);
+  box-shadow: 0 4px 14px var(--rose-soft);
+}
+.cleanup-apply.armed:hover:not(:disabled) { background: color-mix(in srgb, var(--rose) 90%, #000); }

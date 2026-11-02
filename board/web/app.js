@@ -10,10 +10,57 @@ const ICONS = {
   reply: `<svg viewBox="0 0 24 24" ${SVG_ATTRS}><path d="M9 14 4 9l5-5"/><path d="M4 9h9a7 7 0 0 1 7 7v3"/></svg>`,
 };
 
+/* ---------- i18n ---------- */
+
+// 语言与目录由 /api/i18n 提供（和 TUI 同一套解析：HERDR_PORTAL_LANG > LC_ALL > LC_MESSAGES > LANG）。
+// 键是中文原文；目录里没有的键直接显示原文，绝不报错。
+const I18N = { lang: "zh", catalog: {} };
+
+function t(key, vars) {
+  const text = Object.prototype.hasOwnProperty.call(I18N.catalog, key) && I18N.catalog[key] ? I18N.catalog[key] : key;
+  if (!vars) return text;
+  return text.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, name) =>
+    Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name] ?? "") : match
+  );
+}
+
+// 只做抽取标记（常量表），显示时再过 t()
+const N_ = (key) => key;
+
+// 静态 HTML：data-i18n（文本）/ data-i18n-title / data-i18n-placeholder / data-i18n-aria-label
+function applyI18nDom(root = document) {
+  document.documentElement.lang = I18N.htmlLang || "zh-CN";
+  root.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  for (const attr of ["title", "placeholder", "aria-label"]) {
+    root.querySelectorAll(`[data-i18n-${attr}]`).forEach((el) => {
+      el.setAttribute(attr, t(el.getAttribute(`data-i18n-${attr}`)));
+    });
+  }
+}
+
+async function loadI18n() {
+  try {
+    const res = await apiFetch("/api/i18n", { cache: "no-store" });
+    if (!res.ok) return; // 没授权 / 旧服务：保持中文原文
+    const payload = await res.json();
+    if (payload && payload.ok && payload.catalog && typeof payload.catalog === "object") {
+      I18N.lang = String(payload.lang || "zh");
+      I18N.htmlLang = String(payload.html_lang || "");
+      I18N.catalog = payload.catalog;
+    }
+  } catch {
+    // 网络失败：保持中文原文
+  } finally {
+    applyI18nDom();
+  }
+}
+
 const COLUMNS = [
-  ["blocked", "待确认", "BLOCKED", ICONS.blocked, "等待你确认 / 输入"],
-  ["working", "执行中", "WORKING", ICONS.working, "正在跑"],
-  ["settled", "已就绪", "SETTLED", ICONS.settled, "空闲 / 完成"],
+  ["blocked", N_("待确认"), "BLOCKED", ICONS.blocked, N_("等待你确认 / 输入")],
+  ["working", N_("执行中"), "WORKING", ICONS.working, N_("正在跑")],
+  ["settled", N_("已就绪"), "SETTLED", ICONS.settled, N_("空闲 / 完成")],
 ];
 
 const state = {
@@ -32,6 +79,8 @@ const state = {
     scan: null, // 最近一次 cleanup_scan 的结果
     checked: new Set(), // 勾选的 pane_id
     applying: false,
+    armed: false, // 「释放选中」已上膛，等第二次点击
+    armTimer: null,
   },
 };
 
@@ -41,7 +90,9 @@ const $ = (id) => document.getElementById(id);
 
 const TOKEN_KEY = "herdr-portal-token";
 
-// token 只出现在首次打开的 URL 上（open-web.sh 带过来）：存进 sessionStorage 后立刻从地址栏抹掉。
+// token 由 open-web.sh 放在 URL 的 #token= 片段里（片段不会发给服务器、不进服务器日志）：
+// 读一次存进 sessionStorage，立刻从地址栏抹掉。旧的 ?token= 仍然认（兼容旧书签 / 旧脚本）。
+// 服务每次启动都会换新 token；open-web.sh 复用已开标签页时只改片段，这里靠 hashchange 接住。
 function readToken() {
   let stored = "";
   try {
@@ -49,18 +100,21 @@ function readToken() {
   } catch {
     stored = ""; // 隐私模式 / 禁用存储：本次页面会话继续用 URL 里那一份
   }
-  if (!urlParams.has("token")) return stored;
-  const fromUrl = urlParams.get("token") || "";
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
+  const query = new URLSearchParams(location.search);
+  const fromUrl = hash.get("token") || query.get("token") || "";
+  if (!hash.has("token") && !query.has("token")) return stored;
   try {
     sessionStorage.setItem(TOKEN_KEY, fromUrl);
   } catch {
     stored = fromUrl;
   }
-  const rest = new URLSearchParams(urlParams);
-  rest.delete("token");
-  const query = rest.toString();
-  history.replaceState(null, "", location.pathname + (query ? `?${query}` : "") + location.hash);
-  return stored || fromUrl;
+  hash.delete("token");
+  query.delete("token");
+  const rest = query.toString();
+  const frag = hash.toString();
+  history.replaceState(null, "", location.pathname + (rest ? `?${rest}` : "") + (frag ? `#${frag}` : ""));
+  return fromUrl || stored;
 }
 
 // 所有 /api/* 都要带 token，不带只有 403。
@@ -80,7 +134,12 @@ function esc(value) {
 
 // 支持 URL 参数：?view=windows 直接打开窗口视图；?select=<pane_id> 自动选中并展开回复区
 const urlParams = new URLSearchParams(location.search);
-const TOKEN = readToken();
+let TOKEN = readToken();
+window.addEventListener("hashchange", () => {
+  if (!/(^#|&)token=/.test(location.hash)) return;
+  TOKEN = readToken();
+  loadI18n().finally(load); // 新 token：重拉目录和快照（旧 token 在服务重启后已失效）
+});
 
 function matches(item) {
   if (state.family === "all") return true;
@@ -92,7 +151,7 @@ function families(items) {
   const seen = new Map();
   for (const item of items) {
     const key = item.kind === "window" ? "windows" : item.family || item.agent;
-    const label = item.kind === "window" ? "窗口" : item.agent_label || item.agent;
+    const label = item.kind === "window" ? t("窗口") : item.agent_label || item.agent;
     if (!seen.has(key)) seen.set(key, { key, label, count: 0 });
     seen.get(key).count += 1;
   }
@@ -110,7 +169,7 @@ function card(item) {
   const selected = state.selected && state.selected.pane_id === item.pane_id;
   const isAgent = item.kind === "agent";
   const replyBtn = isAgent
-    ? `<button class="card-reply" data-reply="${esc(item.pane_id)}" title="回复该 Agent" aria-label="回复该 Agent">${ICONS.reply}</button>`
+    ? `<button class="card-reply" data-reply="${esc(item.pane_id)}" title="${esc(t("回复该 Agent"))}" aria-label="${esc(t("回复该 Agent"))}">${ICONS.reply}</button>`
     : "";
   // 主 agent 空闲但子代理还在跑：视觉上按「执行中」处理，别让人误读成收工
   const tone = !isAgent
@@ -133,14 +192,21 @@ function card(item) {
   const subText = subTotal
     ? (subRunning ? ` · ⧉${subRunning}▸` : ` · ⧉${subTotal}`)
     : "";
-  const cornerTitle = `框架：${esc(item.agent_label)}${provider ? ` · 供应商：${esc(provider)}` : ""}${model ? ` · 模型：${esc(item.model)}` : ""}${subTotal ? ` · Sub Agent：${subTotal}` : ""}`;
+  const cornerTitle = esc(
+    t("框架：{agent_label}{provider}{model}{sub_total}", {
+      agent_label: item.agent_label,
+      provider: provider ? t(" · 供应商：{provider}", { provider }) : "",
+      model: model ? t(" · 模型：{model}", { model: item.model }) : "",
+      sub_total: subTotal ? ` · Sub Agent：${subTotal}` : "", // i18n: internal（只有全角冒号）
+    })
+  );
   const cornerTag = item.agent_label
     ? `<span class="card-corner" title="${cornerTitle}">${kindIcon}<span class="card-corner-text">${esc(String(item.agent_label).toLowerCase())}${provider ? `<b class="card-provider">${esc(provider)}</b>` : ""}${model ? `<b class="card-model">·${esc(model)}</b>` : ""}${subText ? `<b class="card-sub">${subText}</b>` : ""}</span></span>`
     : "";
   // 会话标签色：color_hue 由后端按 pane 固定分配，会话存活期间不变
   const slotAttrs =
     Number.isInteger(item.color_slot) && Number.isInteger(item.color_hue)
-      ? ` data-slot="${item.color_slot}" style="--slot-h:${item.color_hue}"`
+      ? ` data-slot="${Number(item.color_slot) || 0}" style="--slot-h:${Number(item.color_hue) || 0}"`
       : "";
   return `
     <article class="card tone-${esc(tone)} ${item.focused ? "focused" : ""} ${selected ? "selected" : ""}"${slotAttrs}
@@ -155,7 +221,7 @@ function card(item) {
       </div>
       ${descHtml}
       <div class="card-meta">
-        <span class="card-pill">${esc(item.status_label)}${item.focused ? " · 当前" : ""}</span>
+        <span class="card-pill">${esc(item.status_label)}${item.focused ? esc(t(" · 当前")) : ""}</span>
         <span class="card-meta-icon">${statusIcon(tone)}</span>
         <span class="card-meta-text"><strong>${esc(item.workspace)}</strong>${metaParts.length ? `<span>·</span>${esc(metaParts.join(" · "))}` : ""}</span>
         ${replyBtn}
@@ -170,7 +236,7 @@ function renderStats(snapshot) {
   const spaces = snapshot?.spaces || [];
   const connection = state.online ? "1" : "0";
   $("rail-stats").innerHTML = [
-    ["connection", connection, "连接", state.online ? "" : "err"],
+    ["connection", connection, esc(t("连接")), state.online ? "" : "err"],
     ["agents", c.agents ?? 0, "Agents", ""],
     ["windows", c.windows ?? 0, "Windows", ""],
     ["workspaces", spaces.length, "Workspaces", ""],
@@ -227,11 +293,11 @@ function updateUsageReadout(usage) {
 }
 
 function renderFilters(snapshot) {
-  const chips = [{ key: "all", label: "全部", count: (snapshot.items || []).length }, ...families(snapshot.items || [])];
+  const chips = [{ key: "all", label: t("全部"), count: (snapshot.items || []).length }, ...families(snapshot.items || [])];
   $("filters").innerHTML = chips
     .map(
       (chip) =>
-        `<button class="chip ${state.family === chip.key ? "on" : ""}" data-family="${esc(chip.key)}"><span>${esc(chip.label)}</span><span class="chip-count">${chip.count}</span></button>`
+        `<button class="chip ${state.family === chip.key ? "on" : ""}" data-family="${esc(chip.key)}"><span>${esc(chip.label)}</span><span class="chip-count">${Number(chip.count) || 0}</span></button>`
     )
     .join("");
 }
@@ -249,8 +315,8 @@ function renderBoard(snapshot) {
   $("stage").className = `stage board cols-${visibleColumns.length}`;
   $("stage").innerHTML = visibleColumns.map(([key, title, code, icon, hint]) => {
     const items = key === "blocked" ? blockedItems : (columns[key] || []).filter(matches);
-    const body = items.length ? items.map(card).join("") : `<div class="empty">这一列暂时是空的</div>`;
-    return `<section class="col ${key} ${appear}"><div class="col-head"><strong>${icon}<span>${title}</span></strong><em><span class="col-code">${code}</span><span class="col-count">${items.length}</span></em></div><div class="col-cards" data-col="${key}">${body}</div></section>`;
+    const body = items.length ? items.map(card).join("") : `<div class="empty">${esc(t("这一列暂时是空的"))}</div>`;
+    return `<section class="col ${key} ${appear}"><div class="col-head"><strong>${icon}<span>${esc(t(title))}</span></strong><em><span class="col-code">${code}</span><span class="col-count">${items.length}</span></em></div><div class="col-cards" data-col="${key}">${body}</div></section>`;
   }).join("");
 }
 
@@ -261,14 +327,14 @@ function renderWindows(snapshot) {
     .filter(matches);
   $("stage").innerHTML = items.length
     ? `<div class="windows-grid">${items.map(card).join("")}</div>`
-    : `<div class="error">当前没有普通窗口 Pane（SSH / Shell）</div>`;
+    : `<div class="error">${esc(t("当前没有普通窗口 Pane（SSH / Shell）"))}</div>`;
 }
 
 function renderSpaces(snapshot) {
   $("stage").className = "stage spaces";
   const spaces = snapshot.spaces || [];
   if (!spaces.length) {
-    $("stage").innerHTML = `<div class="error">当前没有工作区</div>`;
+    $("stage").innerHTML = `<div class="error">${esc(t("当前没有工作区"))}</div>`;
     return;
   }
   $("stage").innerHTML = spaces
@@ -276,8 +342,8 @@ function renderSpaces(snapshot) {
       const items = (space.items || []).filter(matches);
       return `
         <section class="space">
-          <h2>${esc(space.label)}${space.focused ? " · 当前" : ""}</h2>
-          <div class="space-grid">${items.length ? items.map(card).join("") : `<div class="empty">没有匹配的 pane</div>`}</div>
+          <h2>${esc(space.label)}${space.focused ? esc(t(" · 当前")) : ""}</h2>
+          <div class="space-grid">${items.length ? items.map(card).join("") : `<div class="empty">${esc(t("没有匹配的 pane"))}</div>`}</div>
         </section>
       `;
     })
@@ -290,7 +356,7 @@ function markOffline(message) {
   setHeaderStatus();
   renderStats(state.snapshot);
   const detail = message ? ` · ${message}` : "";
-  $("meta").textContent = `连接暂时中断 · 保留上次数据 · 自动重试中${detail}`;
+  $("meta").textContent = t("连接暂时中断 · 保留上次数据 · 自动重试中{detail}", { detail });
 }
 
 function captureScroll() {
@@ -341,15 +407,15 @@ function render(snapshot, force = false) {
   if (snapshot.ok === false) {
     const unauthorized = Boolean(snapshot.unauthorized);
     if (state.snapshot?.ok && !unauthorized) {
-      markOffline(snapshot.error || "采集失败");
+      markOffline(snapshot.error || t("采集失败"));
       return;
     }
     $("clock").textContent = snapshot.clock || "--:--:--";
-    markOffline(snapshot.error || "无法读取 Herdr 状态");
+    markOffline(snapshot.error || t("无法读取 Herdr 状态"));
     const hint = unauthorized
-      ? "请从 Herdr 里重新打开网页看板（Ctrl+B Shift+A）"
-      : "看板会自动重连";
-    $("stage").innerHTML = `<div class="error">${esc(snapshot.error || "无法读取 Herdr 状态")}<br><small>${esc(hint)}</small></div>`;
+      ? t("请从 Herdr 里重新打开网页看板（Ctrl+B Shift+A）")
+      : t("看板会自动重连");
+    $("stage").innerHTML = `<div class="error">${esc(snapshot.error || t("无法读取 Herdr 状态"))}<br><small>${esc(hint)}</small></div>`;
     return;
   }
 
@@ -390,7 +456,7 @@ async function load() {
   try {
     const res = await apiFetch("/api/snapshot", { cache: "no-store" });
     if (res.status === 401 || res.status === 403) {
-      const denied = new Error("未授权：本机看板需要一个有效 token");
+      const denied = new Error(t("未授权：本机看板需要一个有效 token"));
       denied.unauthorized = true;
       throw denied;
     }
@@ -455,15 +521,15 @@ function syncComposer() {
   }
   state.selected = { pane_id: item.pane_id, title: item.title, agent_label: item.agent_label, kind: item.kind };
   const target = `${item.agent_label} · ${item.title}`;
-  $("composer-target").textContent = `发送给 ${target}`;
+  $("composer-target").textContent = t("发送给 {target}", { target });
   if (item.kind !== "agent") {
     input.disabled = true;
     $("composer-send").disabled = true;
-    setHint("该 Pane 不是 Agent，网页端暂只支持向 Agent 发送文字", "err");
+    setHint(t("该 Pane 不是 Agent，网页端暂只支持向 Agent 发送文字"), "err");
   } else if (!state.sending) {
     input.disabled = false;
     $("composer-send").disabled = false;
-    setHint(`将直接输入到 ${target} 的终端 · 支持粘贴多行文字`);
+    setHint(t("将直接输入到 {target} 的终端 · 支持粘贴多行文字", { target }));
   }
   updateOutput(item);
 }
@@ -481,14 +547,14 @@ function updateOutput(item) {
   state.outputKey = key;
   box.hidden = false;
   $("composer-output-head").textContent = text
-    ? `最近输出 · ${item.last_output_label || "刚刚"}`
-    : "最近输出 · 暂无";
+    ? t("最近输出 · {last_output_label}", { last_output_label: item.last_output_label || t("刚刚") })
+    : t("最近输出 · 暂无");
   const outputText = $("composer-output-text");
   const nearBottom = outputText.scrollHeight - outputText.scrollTop - outputText.clientHeight < 48;
   if (text) {
     outputText.innerHTML = mdRender(text);
   } else {
-    outputText.textContent = "该 Agent 还没有输出内容，开始执行后会实时更新。";
+    outputText.textContent = t("该 Agent 还没有输出内容，开始执行后会实时更新。");
   }
   // 仅在首次显示或用户本来就停在底部时才自动跟随最新内容，不打断向上翻阅
   if (firstForSelection || nearBottom) {
@@ -530,7 +596,7 @@ async function sendMessage() {
   state.sending = true;
   $("composer-send").disabled = true;
   $("composer-input").disabled = true;
-  setHint("发送中…");
+  setHint(t("发送中…"));
   try {
     const res = await apiFetch("/api/send", {
       method: "POST",
@@ -541,9 +607,9 @@ async function sendMessage() {
     if (!res.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${res.status}`);
     $("composer-input").value = "";
     autosize();
-    setHint(`✓ 已发送 · ${payload.result?.path === "prompt" ? "已作为新输入提交" : "已模拟键盘输入"}`);
+    setHint(t("✓ 已发送 · {path}", { path: payload.result?.path === "prompt" ? t("已作为新输入提交") : t("已模拟键盘输入") }));
   } catch (err) {
-    setHint(`✗ 发送失败 · ${err.message}`, "err");
+    setHint(t("✗ 发送失败 · {message}", { message: err.message }), "err");
   } finally {
     state.sending = false;
     $("composer-input").disabled = false;
@@ -590,10 +656,33 @@ function cleanupSelectedCount() {
   return state.cleanup.checked.size;
 }
 
+// 「释放选中」两步确认：第一次点击上膛（按钮变色、文案变成确认），4 秒内再点才真正关闭 pane；
+// 改勾选、换阈值、关面板、超时都会撤销上膛。和 TUI 的「再按一次 Enter」一致。
+const CLEANUP_ARM_MS = 4000;
+
+function disarmCleanup() {
+  if (state.cleanup.armTimer) clearTimeout(state.cleanup.armTimer);
+  state.cleanup.armTimer = null;
+  if (!state.cleanup.armed) return;
+  state.cleanup.armed = false;
+  const btn = $("cleanup-apply");
+  btn.classList.remove("armed");
+  if (!state.cleanup.applying) btn.textContent = t("释放选中");
+}
+
+function armCleanup(n) {
+  state.cleanup.armed = true;
+  const btn = $("cleanup-apply");
+  btn.classList.add("armed");
+  btn.textContent = t("再点一次确认释放 {n} 项", { n });
+  state.cleanup.armTimer = setTimeout(disarmCleanup, CLEANUP_ARM_MS);
+}
+
 function updateCleanupSelected() {
+  disarmCleanup();
   const total = state.cleanup.scan?.candidates?.length ?? 0;
   const n = cleanupSelectedCount();
-  $("cleanup-selected").textContent = `已选 ${n} / 共 ${total}`;
+  $("cleanup-selected").textContent = t("已选 {n} / 共 {total}", { n, total });
   $("cleanup-apply").disabled = n === 0 || state.cleanup.applying;
 }
 
@@ -602,9 +691,9 @@ function renderCleanup() {
   const body = $("cleanup-body");
   const candidates = scan?.candidates || [];
   if (!candidates.length) {
-    body.innerHTML = `<div class="cleanup-empty">没有可释放的闲置 Pane（换个阈值试试？）</div>`;
+    body.innerHTML = `<div class="cleanup-empty">${esc(t("没有可释放的闲置 Pane（换个阈值试试？）"))}</div>`;
     $("cleanup-protected").innerHTML = "";
-    $("cleanup-selected").textContent = "已选 0 / 共 0";
+    $("cleanup-selected").textContent = t("已选 0 / 共 0");
     $("cleanup-apply").disabled = true;
     return;
   }
@@ -613,13 +702,13 @@ function renderCleanup() {
     .map((c) => {
       const riskAgent = c.risk === "agent";
       const quiet = c.quiet_label || `${c.quiet_seconds}s`;
-      const meta = [c.workspace, c.tab, c.pane_id, c.process, `静默 ${quiet}`].filter(Boolean).join(" · ");
+      const meta = [c.workspace, c.tab, c.pane_id, c.process, t("静默 {quiet}", { quiet })].filter(Boolean).join(" · ");
       const tags = [
         riskAgent ? `<span class="cleanup-tag tag-agent">Agent</span>` : "",
-        c.in_focused_tab ? `<span class="cleanup-tag tag-warn">当前标签页</span>` : "",
+        c.in_focused_tab ? `<span class="cleanup-tag tag-warn">${esc(t("当前标签页"))}</span>` : "",
       ].join("");
       const hints = c.last_in_workspace
-        ? `<span class="cleanup-row-hint">→ 连带释放 workspace ${esc(c.workspace)}</span>`
+        ? `<span class="cleanup-row-hint">${esc(t("→ 连带释放 workspace {workspace}", { workspace: c.workspace }))}</span>`
         : "";
       return `
         <label class="cleanup-row ${riskAgent ? "risk-agent" : ""}" data-pane="${esc(c.pane_id)}">
@@ -638,7 +727,7 @@ function renderCleanup() {
     <li><code>${esc(p.pane_id)}</code><span>${esc(p.title)}</span><em>${esc(p.reason)}</em></li>
   `).join("");
   $("cleanup-protected").innerHTML = protectedList
-    ? `<details class="cleanup-protected-details"><summary>已保护 ${(scan.protected || []).length} 项 · 不会自动释放</summary><ul>${protectedList}</ul></details>`
+    ? `<details class="cleanup-protected-details"><summary>${esc(t("已保护 {protected} 项 · 不会自动释放", { protected: (scan.protected || []).length }))}</summary><ul>${protectedList}</ul></details>`
     : "";
   updateCleanupSelected();
 }
@@ -646,12 +735,12 @@ function renderCleanup() {
 function renderUsageModal(usage, plan) {
   if (!usage || !usage.models) return;
   const total = usage.total || {};
-  $("usage-sub").textContent = `统计 ${usage.sessions} 个会话 · ${usage.since} · 每 10 秒刷新`;
+  $("usage-sub").textContent = t("统计 {sessions} 个会话 · {since} · 每 10 秒刷新", { sessions: usage.sessions, since: usage.since });
   $("usage-total").innerHTML = [
-    `<div class="usage-total-cell"><span>tokens 输入</span><b>${fmtTokens(total.tokens_in)}</b></div>`,
-    `<div class="usage-total-cell"><span>tokens 输出</span><b>${fmtTokens(total.tokens_out)}</b></div>`,
-    `<div class="usage-total-cell"><span>请求数</span><b>${fmtTokens(total.requests)}</b></div>`,
-    `<div class="usage-total-cell"><span>成本</span><b>${fmtCost(total.cost)}</b></div>`,
+    `<div class="usage-total-cell"><span>${esc(t("tokens 输入"))}</span><b>${fmtTokens(total.tokens_in)}</b></div>`,
+    `<div class="usage-total-cell"><span>${esc(t("tokens 输出"))}</span><b>${fmtTokens(total.tokens_out)}</b></div>`,
+    `<div class="usage-total-cell"><span>${esc(t("请求数"))}</span><b>${fmtTokens(total.requests)}</b></div>`,
+    `<div class="usage-total-cell"><span>${esc(t("成本"))}</span><b>${fmtCost(total.cost)}</b></div>`,
   ].join("");
   const rows = usage.models
     .map(
@@ -661,7 +750,7 @@ function renderUsageModal(usage, plan) {
         <span class="usage-model">${esc(m.model)}</span>
         <span class="usage-num">${fmtTokens(m.tokens_in)}</span>
         <span class="usage-num">${fmtTokens(m.tokens_out)}</span>
-        <span class="usage-num">${m.requests}</span>
+        <span class="usage-num">${esc(Number(m.requests) || 0)}</span>
         <span class="usage-num usage-cost">${fmtCost(m.cost)}</span>
       </div>
     `
@@ -681,7 +770,7 @@ function renderUsageModal(usage, plan) {
                 <span class="usage-provider">${esc(p.provider)}</span>
                 <span class="usage-plan-window">${esc(w.window_label)}</span>
                 <span class="usage-plan-bar">${planBar(w.used_fraction)}</span>
-                <span class="usage-plan-status ${esc(w.status)}">${planStatusText(w.status)}</span>
+                <span class="usage-plan-status ${esc(w.status)}">${esc(planStatusText(w.status))}</span>
               </div>
             `
             )
@@ -689,12 +778,14 @@ function renderUsageModal(usage, plan) {
       )
       .join("");
     planHtml =
-      `<div class="usage-plan-head">套餐余量 · 各供应商窗口用度</div>` +
+      `<div class="usage-plan-head">${esc(t("套餐余量 · 各供应商窗口用度"))}</div>` +
       `<div class="usage-plan-body">${planRows}</div>`;
   }
   $("usage-body").innerHTML =
-    `<div class="usage-row usage-head"><span>供应商</span><span>模型</span><span>输入</span><span>输出</span><span>请求</span><span>成本</span></div>` +
-    (rows || `<div class="cleanup-empty">今日暂无用量数据</div>`) +
+    `<div class="usage-row usage-head">${[N_("供应商"), N_("模型"), N_("输入"), N_("输出"), N_("请求"), N_("成本")]
+      .map((head) => `<span>${esc(t(head))}</span>`)
+      .join("")}</div>` +
+    (rows || `<div class="cleanup-empty">${esc(t("今日暂无用量数据"))}</div>`) +
     planHtml;
 }
 
@@ -705,7 +796,8 @@ function planBar(fraction) {
 }
 
 function planStatusText(status) {
-  return { ok: "正常", warning: "接近上限", exhausted: "已耗尽" }[status] || status || "—";
+  const key = { ok: N_("正常"), warning: N_("接近上限"), exhausted: N_("已耗尽") }[status];
+  return key ? t(key) : status || "—";
 }
 
 function openUsage() {
@@ -740,11 +832,12 @@ function cleanupScanStatus(text) {
 }
 
 async function loadCleanupScan() {
+  disarmCleanup();
   $("cleanup-msg").textContent = "";
   $("cleanup-msg").className = "cleanup-msg";
-  $("cleanup-apply").textContent = "释放选中";
+  $("cleanup-apply").textContent = t("释放选中");
   $("cleanup-apply").disabled = true;
-  $("cleanup-body").innerHTML = `<div class="cleanup-empty">扫描中…</div>`;
+  $("cleanup-body").innerHTML = `<div class="cleanup-empty">${esc(t("扫描中…"))}</div>`;
   $("cleanup-protected").innerHTML = "";
   try {
     state.cleanup.scan = await fetchCleanup(state.cleanup.threshold);
@@ -755,7 +848,7 @@ async function loadCleanupScan() {
     renderCleanup();
     return true;
   } catch (err) {
-    $("cleanup-body").innerHTML = `<div class="cleanup-empty">扫描失败：${esc(err.message)}</div>`;
+    $("cleanup-body").innerHTML = `<div class="cleanup-empty">${esc(t("扫描失败：{message}", { message: err.message }))}</div>`;
     return false;
   }
 }
@@ -775,6 +868,7 @@ function closeCleanup() {
   const dialog = $("cleanup");
   if (dialog.hidden) return;
   dialog.hidden = true;
+  disarmCleanup();
   state.cleanup.applying = false;
   const openBtn = $("cleanup-open");
   if (openBtn) openBtn.focus();
@@ -799,10 +893,15 @@ async function applyCleanup() {
   if (state.cleanup.applying) return;
   const paneIds = [...state.cleanup.checked];
   if (!paneIds.length) return;
+  if (!state.cleanup.armed) {
+    armCleanup(paneIds.length);
+    return;
+  }
+  disarmCleanup();
   state.cleanup.applying = true;
   const applyBtn = $("cleanup-apply");
   applyBtn.disabled = true;
-  applyBtn.textContent = "释放中…";
+  applyBtn.textContent = t("释放中…");
   try {
     const res = await apiFetch("/api/cleanup", {
       method: "POST",
@@ -813,30 +912,34 @@ async function applyCleanup() {
     if (!res.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${res.status}`);
     const r = payload.result || {};
     const parts = [];
-    if ((r.closed || []).length) parts.push(`已释放 ${r.closed.length} 个 pane`);
-    if ((r.freed?.workspaces || 0) > 0) parts.push(`回收 ${r.freed.workspaces} 个 workspace`);
-    if ((r.skipped || []).length) parts.push(`${r.skipped.length} 项已变为活跃，已跳过`);
+    if ((r.closed || []).length) parts.push(t("已释放 {closed} 个 pane", { closed: r.closed.length }));
+    if ((r.freed?.workspaces || 0) > 0) parts.push(t("回收 {workspaces} 个 workspace", { workspaces: r.freed.workspaces }));
+    if ((r.skipped || []).length) parts.push(t("{skipped} 项已变为活跃，已跳过", { skipped: r.skipped.length }));
     state.cleanup.applying = false;
-    applyBtn.textContent = "释放选中";
+    applyBtn.textContent = t("释放选中");
     if ((r.failed || []).length) {
       // 有失败：留在面板里展示首个错误，方便重试
       cleanupScanStatus(
-        `释放失败 ${r.failed.length} 项：${r.failed[0].error}${(r.closed || []).length ? `（已释放 ${r.closed.length} 项）` : ""}`
+        t("释放失败 {failed} 项：{error}{closed}", {
+          failed: r.failed.length,
+          error: r.failed[0].error,
+          closed: (r.closed || []).length ? t("（已释放 {closed} 项）", { closed: r.closed.length }) : "",
+        })
       );
       applyBtn.disabled = cleanupSelectedCount() === 0;
       load();
       refreshCleanupCount();
       return;
     }
-    showToast(parts.length ? parts.join(" · ") : "没有可释放的 Pane");
+    showToast(parts.length ? parts.join(" · ") : t("没有可释放的 Pane"));
     closeCleanup();
     load();
     refreshCleanupCount(); // 释放后懒刷新角标
   } catch (err) {
     state.cleanup.applying = false;
-    applyBtn.textContent = "释放选中";
+    applyBtn.textContent = t("释放选中");
     applyBtn.disabled = cleanupSelectedCount() === 0;
-    cleanupScanStatus(`请求失败：${err.message}`);
+    cleanupScanStatus(t("请求失败：{message}", { message: err.message }));
   }
 }
 
@@ -1005,6 +1108,9 @@ if (urlParams.get("view") === "windows") {
 }
 let pendingSelect = urlParams.get("select");
 
-load();
-refreshCleanupCount(); // 懒刷新「释放闲置」角标（不进 1.5s 轮询）
-setInterval(load, 1500);
+// 先拿到语言目录再渲染第一帧，避免中文闪一下再切换
+loadI18n().finally(() => {
+  load();
+  refreshCleanupCount(); // 懒刷新「释放闲置」角标（不进 1.5s 轮询）
+  setInterval(load, 1500);
+});

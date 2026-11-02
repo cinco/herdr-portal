@@ -18,7 +18,7 @@
   </div>
 
   <div class="app-shell">
-    <aside class="rail" id="rail" aria-label="命令栏">
+    <aside class="rail" id="rail" aria-label="命令栏" data-i18n-aria-label="命令栏">
       <div class="rail-brand">
         <span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         <div class="rail-brand-copy">
@@ -27,7 +27,7 @@
         </div>
       </div>
 
-      <nav class="modes rail-nav" role="tablist" aria-label="视图">
+      <nav class="modes rail-nav" role="tablist" aria-label="视图" data-i18n-aria-label="视图">
         <button data-view="board" class="on" role="tab" aria-selected="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
           <span class="rail-nav-label">Mission Control</span>
@@ -55,16 +55,16 @@
       <div class="rail-stats" id="rail-stats" aria-live="polite"></div>
 
       <div class="rail-foot">
-        <button class="cleanup-open" id="cleanup-open" title="释放闲置 Pane（快捷键 X）">
+        <button class="cleanup-open" id="cleanup-open" title="释放闲置 Pane（快捷键 X）" data-i18n-title="释放闲置 Pane（快捷键 X）">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3v6"/><path d="M15 3v6"/><path d="M5 9h14v2a4 4 0 0 1-4 4h-6a4 4 0 0 1-4-4z"/><path d="M8 15v3a3 3 0 0 0 3 3h2a3 3 0 0 0 3-3v-3"/></svg>
-          <span class="cleanup-open-label">释放闲置</span>
+          <span class="cleanup-open-label" data-i18n="释放闲置">释放闲置</span>
           <span class="cleanup-count" id="cleanup-count" hidden>0</span>
         </button>
-        <div class="themes" role="tablist" aria-label="主题">
-          <button data-theme="light" role="tab" aria-selected="false">浅色</button>
-          <button data-theme="dark" role="tab" aria-selected="false">深色</button>
-          <button data-theme="neon" role="tab" aria-selected="false">霓虹</button>
-          <button data-theme="command" role="tab" aria-selected="true">指挥</button>
+        <div class="themes" role="tablist" aria-label="主题" data-i18n-aria-label="主题">
+          <button data-theme="light" role="tab" aria-selected="false" data-i18n="浅色">浅色</button>
+          <button data-theme="dark" role="tab" aria-selected="false" data-i18n="深色">深色</button>
+          <button data-theme="neon" role="tab" aria-selected="false" data-i18n="霓虹">霓虹</button>
+          <button data-theme="command" role="tab" aria-selected="true" data-i18n="指挥">指挥</button>
         </div>
       </div>
     </aside>
@@ -85,8 +85,8 @@
             <span class="ts-label">AGENTS ONLINE</span>
             <span class="ts-value" id="agents-online">—</span>
           </div>
-          <button class="topbar-usage" id="usage-open" title="今日模型用量">
-            <span class="ts-label">今日用量</span>
+          <button class="topbar-usage" id="usage-open" title="今日模型用量" data-i18n-title="今日模型用量">
+            <span class="ts-label" data-i18n="今日用量">今日用量</span>
             <span class="ts-value" id="usage-cost">—</span>
           </button>
         </div>
@@ -100,24 +100,24 @@
       <section class="composer" id="composer" hidden>
         <div class="composer-inner">
           <div class="composer-head">
-            <span class="composer-target" id="composer-target">未选择 Agent</span>
-            <button class="composer-close" id="composer-close" title="关闭 (Esc)">✕</button>
+            <span class="composer-target" id="composer-target" data-i18n="未选择 Agent">未选择 Agent</span>
+            <button class="composer-close" id="composer-close" title="关闭 (Esc)" data-i18n-title="关闭 (Esc)">✕</button>
           </div>
           <div class="composer-row">
             <textarea id="composer-input" rows="1"
-              placeholder="输入回复… Enter 发送 / Shift+Enter 换行 / Esc 关闭"></textarea>
-            <button id="composer-send" class="send">发送</button>
+              placeholder="输入回复… Enter 发送 / Shift+Enter 换行 / Esc 关闭" data-i18n-placeholder="输入回复… Enter 发送 / Shift+Enter 换行 / Esc 关闭"></textarea>
+            <button id="composer-send" class="send" data-i18n="发送">发送</button>
           </div>
           <div class="composer-output" id="composer-output" hidden>
-            <div class="composer-output-head" id="composer-output-head">最近输出</div>
+            <div class="composer-output-head" id="composer-output-head" data-i18n="最近输出">最近输出</div>
             <div class="composer-output-text" id="composer-output-text"></div>
           </div>
-          <p class="composer-hint" id="composer-hint">点击 Agent 卡片定位到 Herdr · 点卡片上的 ↩ 图标打开回复</p>
+          <p class="composer-hint" id="composer-hint" data-i18n="点击 Agent 卡片定位到 Herdr · 点卡片上的 ↩ 图标打开回复">点击 Agent 卡片定位到 Herdr · 点卡片上的 ↩ 图标打开回复</p>
         </div>
       </section>
 
       <footer class="status-strip">
-        <span class="footer-hint"><kbd>CLICK</kbd> 在 Herdr 中定位该 Pane · <kbd>↩</kbd> 展开回复输入 · <kbd>ENTER</kbd>/<kbd>SPACE</kbd> 激活卡片 · <kbd>X</kbd> 释放闲置</span>
+        <span class="footer-hint"><kbd>CLICK</kbd> <span data-i18n="在 Herdr 中定位该 Pane ·">在 Herdr 中定位该 Pane ·</span> <kbd>↩</kbd> <span data-i18n="展开回复输入 ·">展开回复输入 ·</span> <kbd>ENTER</kbd>/<kbd>SPACE</kbd> <span data-i18n="激活卡片 ·">激活卡片 ·</span> <kbd>X</kbd> <span data-i18n="释放闲置">释放闲置</span></span>
         <span id="meta"></span>
       </footer>
     </div>
@@ -127,32 +127,32 @@
     <div class="cleanup-dialog" role="dialog" aria-modal="true" aria-labelledby="cleanup-title" tabindex="-1">
       <header class="cleanup-head">
         <div class="cleanup-head-copy">
-          <h2 id="cleanup-title">释放闲置 Pane</h2>
-          <p class="cleanup-sub">回收静默超过阈值的空闲 Pane，释放系统资源</p>
+          <h2 id="cleanup-title" data-i18n="释放闲置 Pane">释放闲置 Pane</h2>
+          <p class="cleanup-sub" data-i18n="回收静默超过阈值的空闲 Pane，释放系统资源">回收静默超过阈值的空闲 Pane，释放系统资源</p>
         </div>
-        <button class="cleanup-close" id="cleanup-close" title="关闭 (Esc)">✕</button>
+        <button class="cleanup-close" id="cleanup-close" title="关闭 (Esc)" data-i18n-title="关闭 (Esc)">✕</button>
       </header>
       <div class="cleanup-toolbar">
-        <label class="cleanup-threshold">空闲阈值
+        <label class="cleanup-threshold"><span data-i18n="空闲阈值">空闲阈值</span>
           <select id="cleanup-threshold">
-            <option value="0">不限</option>
+            <option value="0" data-i18n="不限">不限</option>
             <option value="300">5m</option>
             <option value="1800" selected>30m</option>
             <option value="7200">2h</option>
           </select>
         </label>
         <div class="cleanup-tools">
-          <button id="cleanup-all" class="cleanup-tool">全选</button>
-          <button id="cleanup-none" class="cleanup-tool">全不选</button>
+          <button id="cleanup-all" class="cleanup-tool" data-i18n="全选">全选</button>
+          <button id="cleanup-none" class="cleanup-tool" data-i18n="全不选">全不选</button>
         </div>
       </div>
       <div class="cleanup-body" id="cleanup-body"></div>
       <div class="cleanup-protected" id="cleanup-protected"></div>
       <footer class="cleanup-foot">
-        <span class="cleanup-selected" id="cleanup-selected">已选 0 / 共 0</span>
+        <span class="cleanup-selected" id="cleanup-selected" data-i18n="已选 0 / 共 0">已选 0 / 共 0</span>
         <span class="cleanup-msg" id="cleanup-msg" role="status"></span>
-        <button class="cleanup-cancel" id="cleanup-cancel">取消</button>
-        <button class="cleanup-apply" id="cleanup-apply">释放选中</button>
+        <button class="cleanup-cancel" id="cleanup-cancel" data-i18n="取消">取消</button>
+        <button class="cleanup-apply" id="cleanup-apply" data-i18n="释放选中">释放选中</button>
       </footer>
     </div>
   </div>
@@ -160,16 +160,16 @@
     <div class="cleanup-dialog usage-dialog" role="dialog" aria-modal="true" aria-labelledby="usage-title" tabindex="-1">
       <header class="cleanup-head">
         <div class="cleanup-head-copy">
-          <h2 id="usage-title">今日模型用量</h2>
-          <p class="cleanup-sub" id="usage-sub">统计今日所有 Agent 会话的 token 与成本</p>
+          <h2 id="usage-title" data-i18n="今日模型用量">今日模型用量</h2>
+          <p class="cleanup-sub" id="usage-sub" data-i18n="统计今日所有 Agent 会话的 token 与成本">统计今日所有 Agent 会话的 token 与成本</p>
         </div>
-        <button class="cleanup-close" id="usage-close" title="关闭 (Esc)">✕</button>
+        <button class="cleanup-close" id="usage-close" title="关闭 (Esc)" data-i18n-title="关闭 (Esc)">✕</button>
       </header>
       <div class="usage-total" id="usage-total"></div>
       <div class="cleanup-body usage-body" id="usage-body"></div>
       <footer class="cleanup-foot">
-        <span class="cleanup-selected" id="usage-foot">窗口每 10 秒刷新</span>
-        <button class="cleanup-cancel" id="usage-cancel">关闭</button>
+        <span class="cleanup-selected" id="usage-foot" data-i18n="窗口每 10 秒刷新">窗口每 10 秒刷新</span>
+        <button class="cleanup-cancel" id="usage-cancel" data-i18n="关闭">关闭</button>
       </footer>
     </div>
   </div>
